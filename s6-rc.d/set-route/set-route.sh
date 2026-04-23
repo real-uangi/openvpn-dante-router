@@ -53,7 +53,16 @@ else
   echo "[set-route] using default route dev $DEFAULT_IF (no gateway)"
 fi
 
-IFS=',' read -r -a NETS <<< "${LOCAL_NETS:-}"
+DEFAULT_LOCAL_NETS='10.0.0.0/8,172.16.0.0/12,192.168.0.0/16'
+EFFECTIVE_LOCAL_NETS="${LOCAL_NETS:-}"
+if [ -z "${EFFECTIVE_LOCAL_NETS//[[:space:]]/}" ]; then
+  EFFECTIVE_LOCAL_NETS="$DEFAULT_LOCAL_NETS"
+  echo "[set-route] LOCAL_NETS is empty, fallback to default: $EFFECTIVE_LOCAL_NETS"
+else
+  echo "[set-route] LOCAL_NETS: $EFFECTIVE_LOCAL_NETS"
+fi
+
+IFS=',' read -r -a NETS <<< "$EFFECTIVE_LOCAL_NETS"
 
 for raw_net in "${NETS[@]}"; do
   net="$(trim_spaces "$raw_net")"
