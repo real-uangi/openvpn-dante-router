@@ -1,9 +1,31 @@
-#!/usr/bin/execlineb
-with-contenv
-importas THIS_VPN_PROFILE VPN_PROFILE
-s6-setuidgid root
+#!/command/with-contenv sh
+set -eu
 
-foreground {
-    echo "using profile ${THIS_VPN_PROFILE}.ovpn"
-}
-exec openvpn --config /config/${THIS_VPN_PROFILE}.ovpn --auth-user-pass /auth.txt
+THIS_VPN_PROFILE="${VPN_PROFILE:-}"
+if [ -z "${THIS_VPN_PROFILE}" ]; then
+  echo "VPN_PROFILE is required" >&2
+  exit 1
+fi
+
+if [ -n "${OPENVPN_AUTH_FILE:-}" ]; then
+  AUTH_FILE="${OPENVPN_AUTH_FILE}"
+elif [ -f /run/secrets/openvpn_auth ]; then
+  AUTH_FILE="/run/secrets/openvpn_auth"
+elif [ -f /auth.txt ]; then
+  AUTH_FILE="/auth.txt"
+elif [ -n "${OPENVPN_USERNAME:-}" ] && [ -n "${OPENVPN_PASSWORD:-}" ]; then
+  AUTH_FILE="$(mktemp /tmp/openvpn-auth.XXXXXX)"
+  chmod 600 "${AUTH_FILE}"
+  printf '%s\n%s\n' "${OPENVPN_USERNAME}" "${OPENVPN_PASSWORD}" > "${AUTH_FILE}"
+else
+  echo "OpenVPN credentials are missing. Set OPENVPN_AUTH_FILE, mount /run/secrets/openvpn_auth, or set OPENVPN_USERNAME and OPENVPN_PASSWORD." >&2
+  exit 1
+fi
+
+if [ ! -f "${AUTH_FILE}" ]; then
+  echo "OpenVPN auth file not found: ${AUTH_FILE}" >&2
+  exit 1
+fi
+
+echo "using profile ${THIS_VPN_PROFILE}.ovpn"
+exec openvpn --config "/config/${THIS_VPN_PROFILE}.ovpn" --auth-user-pass "${AUTH_FILE}"
