@@ -1,0 +1,9 @@
+#!/usr/bin/execlineb
+with-contenv
+importas THIS_VPN_PROFILE VPN_PROFILE
+s6-setuidgid root
+
+foreground {
+    echo "using profile ${THIS_VPN_PROFILE}.ovpn"
+}
+exec openvpn --config /config/${THIS_VPN_PROFILE}.ovpn --auth-user-pass /auth.txt
