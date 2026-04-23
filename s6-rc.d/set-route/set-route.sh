@@ -1,14 +1,71 @@
 #!/bin/bash
+set -euo pipefail
 
-DEFAULT_IF=$(ip route show default | awk '{print $5}' | head -n1)
+trim_spaces() {
+  local value="$1"
+  value="${value#"${value%%[![:space:]]*}"}"
+  value="${value%"${value##*[![:space:]]}"}"
+  printf '%s' "$value"
+}
 
-echo "default interface: $DEFAULT_IF"
+DEFAULT_IF="$(ip -4 route show default | awk '
+  $1 == "default" {
+    dev = ""
+    for (i = 1; i <= NF; i++) {
+      if ($i == "dev" && i < NF) {
+        dev = $(i + 1)
+      }
+    }
+    if (dev != "" && dev != "tun0") {
+      print dev
+      exit
+    }
+  }
+')"
 
-IFS=',' read -ra NETS <<< "$LOCAL_NETS"
+DEFAULT_GW="$(ip -4 route show default | awk '
+  $1 == "default" {
+    dev = ""
+    via = ""
+    for (i = 1; i <= NF; i++) {
+      if ($i == "dev" && i < NF) {
+        dev = $(i + 1)
+      }
+      if ($i == "via" && i < NF) {
+        via = $(i + 1)
+      }
+    }
+    if (dev != "" && dev != "tun0") {
+      print via
+      exit
+    }
+  }
+')"
 
-for net in "${NETS[@]}"; do
+if [ -z "$DEFAULT_IF" ]; then
+  echo "[set-route] failed to resolve non-tun0 default interface" >&2
+  exit 1
+fi
 
-  echo "route $net via 172.17.0.1 dev $DEFAULT_IF"
-  ip route replace "$net" dev "$DEFAULT_IF"
+if [ -n "$DEFAULT_GW" ]; then
+  echo "[set-route] using default route via $DEFAULT_GW dev $DEFAULT_IF"
+else
+  echo "[set-route] using default route dev $DEFAULT_IF (no gateway)"
+fi
 
+IFS=',' read -r -a NETS <<< "${LOCAL_NETS:-}"
+
+for raw_net in "${NETS[@]}"; do
+  net="$(trim_spaces "$raw_net")"
+  if [ -z "$net" ]; then
+    continue
+  fi
+
+  if [ -n "$DEFAULT_GW" ]; then
+    echo "[set-route] route $net via $DEFAULT_GW dev $DEFAULT_IF"
+    ip route replace "$net" via "$DEFAULT_GW" dev "$DEFAULT_IF"
+  else
+    echo "[set-route] route $net dev $DEFAULT_IF"
+    ip route replace "$net" dev "$DEFAULT_IF"
+  fi
 done
